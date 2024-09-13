@@ -5,9 +5,9 @@ name: Application CI
 
 on:
   push:
-    branches: [ "triet-elsa" ]
+    branches: [ "main", "triet-elsa" ]
   pull_request:
-    branches: [ "triet-elsa" ]
+    branches: [ "main" ]
 
 env: 
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
