@@ -18,6 +18,7 @@ jobs:
     name: Build and push Docker image to Docker Hub
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    steps:
       - name: Check out the repo
         uses: actions/checkout@v3
       
