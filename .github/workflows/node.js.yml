@@ -1,31 +1,60 @@
 # This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
 
-name: Node.js CI
+name: Application CI/CD
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "dev", "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "dev", "main" ]
 
+env: 
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+  REPOSITORY_NAME: ${{ secrets.REPOSITORY_NAME}}
+  ARGOCD_URL: ${{ secrets.ARGOCD_URL}}
+  ARGOCD_USER: ${{ secrets.ARGOCD_USER}}
+  ARGOCD_PASSWORD: ${{ secrets.ARGOCD_PASSWORD}}
+  ENV: dev
+  ARGOCD_SERVICE: web-app
 jobs:
-  build:
-
+  build_and_push_to_registry:
+    name: Build and push Docker image to Docker Hub
+    # if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v3
+      
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}          
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+            
+      - name: Get Current Date 
+        id: date
+        run: echo "::set-output name=date::$(date +'%Y-%m-%d--%M-%S')"
+      - name: Build Docker Image
+        run: docker build . --file Dockerfile --tag $DOCKERHUB_USERNAME/$REPOSITORY_NAME:${{ steps.date.outputs.date }}
+      - name: Push Docker Image to Docker Hub
+        run: docker push $DOCKERHUB_USERNAME/$REPOSITORY_NAME:${{ steps.date.outputs.date }}
 
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x]
-        # See supported Node.js release schedule at https://nodejs.org/en/about/releases/
+    outputs:
+      IMAGE_TAG: {{ steps.build_and_push_to_registry.outputs.date }}
+
+  deploy:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: build_and_push_to_registry
+
+    env:
+      IMAGE_TAG: {{ needs.build_and_push_to_registry.outputs.IMAGE_TAG }}
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
-      with:
-        node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-    - run: npm install
-    - run: npm run lint
-    - run: npm run test
+      - name: Login to ArgoCD and deploy
+        run: |
+          argocd login $ARGOCD_URL --username $ARGOCD_USER --password $ARGOCD_PASSWORD --grpc-web --insecure
+          argocd app set $ENV-$ARGOCD_SERVICE --project=default -p image.tag=${IMAGE_TAG}
+          argocd app sync $ENV-$ARGOCD_SERVICE
